@@ -7,10 +7,29 @@
     <Nullable>enable</Nullable>
     <RootNamespace>Pixault.Mcp</RootNamespace>
     <AssemblyName>pixault-mcp</AssemblyName>
+  </PropertyGroup>
+
+  <PropertyGroup Label="NuGet">
+    <PackageId>Pixault.Mcp</PackageId>
     <Title>Pixault MCP Server</Title>
     <Authors>Endpoint Systems</Authors>
-    <Description>Model Context Protocol server for Pixault image CDN. Exposes image management, transformation, plugin, and documentation tools for AI assistants.</Description>
+    <Company>Endpoint Systems</Company>
+    <Copyright>Copyright (c) Endpoint Systems. All rights reserved.</Copyright>
+    <Description>MCP server for the Pixault image CDN. Exposes image, metadata, transform, plugin, and documentation tools for AI assistants.</Description>
+    <PackageTags>pixault;mcp;model-context-protocol;ai;image;cdn</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageProjectUrl>https://pixault.io</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/Pixault/pixault-mcp</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageIcon>icon.png</PackageIcon>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
   </PropertyGroup>
+
+  <ItemGroup Label="Package assets">
+    <None Include="../../icon.png" Pack="true" PackagePath="" />
+    <None Include="../../README.md" Pack="true" PackagePath="" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="ModelContextProtocol" />
