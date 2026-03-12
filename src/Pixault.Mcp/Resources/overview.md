@@ -6,13 +6,13 @@ Pixault is an image processing CDN and API that handles upload, storage, transfo
 
 - **Upload** images via REST API or SDK
 - **Transform** on-the-fly: resize, crop, blur, watermark, format conversion
-- **Deliver** globally through Cloudflare CDN with immutable caching
+- **Deliver** globally through edge CDN with immutable caching
 - **Track** usage with built-in bandwidth, storage, and request metering
 
 ## How It Works
 
 ```
-Your App → Upload API → GCS Storage
+Your App → Upload API → Cloud Storage
                            ↓
 User Request → CDN Edge → Pixault API → Transform → Cache → Respond
                   ↓

@@ -9,7 +9,7 @@ Client Request
     │
     ▼
 ┌─────────────────────────────┐
-│  Cloudflare CDN (Edge)      │
+│  CDN (Edge)                 │
 │  • 30-day immutable cache   │
 │  • Auto WebP/AVIF           │
 │  • DDoS protection          │
@@ -25,15 +25,15 @@ Client Request
 │  1. Rate limiting           │
 │  2. URL parsing             │
 │  3. Signature validation    │
-│  4. Cache check (GCS)       │
-│  5. Transform (SkiaSharp)   │
-│  6. Store variant (GCS)     │
+│  4. Cache check             │
+│  5. Transform               │
+│  6. Store variant            │
 │  7. Respond + cache headers │
 └─────────────────────────────┘
                 │
                 ▼
 ┌─────────────────────────────┐
-│  Google Cloud Storage       │
+│  Cloud Storage              │
 │  • Originals bucket         │
 │  • Cache bucket (variants)  │
 │  • Metadata bucket          │
@@ -59,7 +59,7 @@ This means:
 
 ## Image Processing
 
-Pixault uses [SkiaSharp](https://github.com/nicholasgasior/SkiaSharp) (BSD-licensed) for all image transformations:
+Pixault performs all image transformations on-demand:
 
 | Operation | Implementation |
 |-----------|---------------|
@@ -70,13 +70,13 @@ Pixault uses [SkiaSharp](https://github.com/nicholasgasior/SkiaSharp) (BSD-licen
 | Watermark | Composite overlay with position and opacity |
 | SVG | Sanitization + optional rasterization |
 
-Processing happens on-demand and results are cached in GCS. The cache key is a SHA256 hash of the transformation parameters, ensuring deterministic variant identification.
+Processing happens on-demand and results are cached. The cache key is a SHA256 hash of the transformation parameters, ensuring deterministic variant identification.
 
 ## Multi-Project Isolation
 
 Each project gets isolated:
 
-- **Storage** — Separate GCS object prefixes per project
+- **Storage** — Separate object prefixes per project
 - **Metadata** — Independent image metadata per project
 - **Named Transforms** — Project-specific presets
 - **Usage Tracking** — Per-project bandwidth and storage metering
@@ -137,17 +137,6 @@ Two authentication models:
 | Logging | Serilog | Structured logs enriched with trace/span IDs |
 | Export | OTLP | Compatible with Jaeger, Grafana, Datadog, etc. |
 
-## Infrastructure
-
-| Component | Technology | Notes |
-|-----------|-----------|-------|
-| API runtime | .NET 10 on Google Cloud Run | Scale-to-zero, auto-scaling |
-| CDN | Cloudflare | Free-tier unlimited bandwidth |
-| Storage | Google Cloud Storage | Same-region as Cloud Run (free transfer) |
-| Database | PostgreSQL | Billing, accounts, usage tracking |
-| Image processing | SkiaSharp 3.x | BSD license, no revenue restrictions |
-| Payment | CardPointe | PCI Level 1 tokenization |
-
 ## Custom Domains
 
 Growth, Pro, and Business plans support custom domains:
@@ -156,7 +145,7 @@ Growth, Pro, and Business plans support custom domains:
 images.yourdomain.com → CNAME → img.pixault.io
 ```
 
-Cloudflare handles SSL termination. Images are served from your own domain with full CDN caching.
+SSL is handled automatically. Images are served from your own domain with full CDN caching.
 
 ## Performance Characteristics
 
@@ -164,6 +153,6 @@ Cloudflare handles SSL termination. Images are served from your own domain with 
 |--------|--------------|
 | CDN cache hit latency | < 50ms (edge) |
 | Transform (resize + encode) | 50–200ms |
-| Original GCS fetch | 10–30ms (same region) |
-| Cached variant fetch | 10–30ms (same region) |
-| Cold start (Cloud Run) | < 2s |
+| Original fetch | 10–30ms |
+| Cached variant fetch | 10–30ms |
+| Cold start | < 2s |

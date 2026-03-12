@@ -67,7 +67,7 @@ Full mode replaces the WordPress media upload flow. Images are uploaded directly
 
 ### Advantages Over CDN Mode
 
-- **Reduced server storage** — Originals stored in Pixault (GCS), not WordPress
+- **Reduced server storage** — Originals stored in Pixault, not WordPress
 - **Consistent metadata** — Alt text, tags, and titles synced with Pixault
 - **Advanced features** — Watermarking, named transforms, signed URLs
 

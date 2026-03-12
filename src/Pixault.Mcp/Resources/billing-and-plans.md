@@ -103,7 +103,7 @@ Cancel anytime from the billing dashboard. When you cancel:
 
 ## Payment
 
-Pixault accepts credit and debit cards processed through CardPointe (PCI Level 1 compliant). Card details are tokenized — Pixault never stores raw card numbers.
+Pixault accepts credit and debit cards. Card details are tokenized (PCI Level 1 compliant) — Pixault never stores raw card numbers.
 
 ## Invoices
 
