@@ -6,7 +6,10 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <RootNamespace>Pixault.Mcp</RootNamespace>
+    <Version>1.0.1</Version>
     <AssemblyName>pixault-mcp</AssemblyName>
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>pixault-mcp</ToolCommandName>
   </PropertyGroup>
 
   <PropertyGroup Label="NuGet">
