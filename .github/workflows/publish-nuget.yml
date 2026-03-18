@@ -1,0 +1,60 @@
+name: Publish to NuGet
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'Directory.Packages.props'
+
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: nuget
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+          dotnet-quality: 'preview'
+
+      - name: Restore
+        run: dotnet restore src/Pixault.Mcp/Pixault.Mcp.csproj
+
+      - name: Build
+        run: dotnet build src/Pixault.Mcp/Pixault.Mcp.csproj -c Release --no-restore
+
+      - name: Get version from csproj
+        id: version
+        run: |
+          VERSION=$(grep -oP '<Version>\K[^<]+' src/Pixault.Mcp/Pixault.Mcp.csproj)
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Package version: $VERSION"
+
+      - name: Check if version exists on NuGet
+        id: check
+        run: |
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            "https://api.nuget.org/v3-flatcontainer/pixault.mcp/${{ steps.version.outputs.version }}/pixault.mcp.nuspec")
+          if [ "$STATUS" = "200" ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "Version ${{ steps.version.outputs.version }} already exists — skipping publish"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "Version ${{ steps.version.outputs.version }} is new — will publish"
+          fi
+
+      - name: Pack
+        if: steps.check.outputs.exists == 'false'
+        run: dotnet pack src/Pixault.Mcp/Pixault.Mcp.csproj -c Release --no-build -o ./nupkg
+
+      - name: Push to NuGet
+        if: steps.check.outputs.exists == 'false'
+        run: dotnet nuget push ./nupkg/*.nupkg --api-key az --source https://api.nuget.org/v3/index.json --skip-duplicate
