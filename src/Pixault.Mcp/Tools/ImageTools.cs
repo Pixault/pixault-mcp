@@ -12,9 +12,12 @@ public sealed class ImageTools
         "Returns the new image ID and CDN URL. Supported formats: JPEG, PNG, WebP, GIF, AVIF, SVG, MP4, WebM, MOV.")]
     public static async Task<string> UploadImage(
         PixaultUploadClient client,
+        AgentScope scope,
         [Description("Project identifier (e.g. 'barber', 'tattoo')")] string project,
         [Description("Absolute path to the file to upload")] string filePath)
     {
+        if (scope.CheckWrite() is { } denied) return denied;
+
         if (!File.Exists(filePath))
             return $"Error: File not found at '{filePath}'";
 
@@ -28,7 +31,7 @@ public sealed class ImageTools
     }
 
     [McpServerTool, Description(
-        "List and search images for a project. Supports filtering by text search, category, keyword, author, and media type.")]
+        "List and search images for a project. Supports filtering by text search, category, keyword, author, folder, and media type.")]
     public static async Task<string> ListImages(
         PixaultAdminClient client,
         [Description("Maximum number of images to return (default 20, max 50)")] int limit = 20,
@@ -37,11 +40,13 @@ public sealed class ImageTools
         [Description("Filter by category (exact match, case-insensitive)")] string? category = null,
         [Description("Filter by keyword tag (case-insensitive)")] string? keyword = null,
         [Description("Filter by author/creator name (case-insensitive)")] string? author = null,
-        [Description("Filter to videos only (true) or images only (false)")] bool? isVideo = null)
+        [Description("Filter to images in a specific folder (e.g. 'products/hero')")] string? folder = null,
+        [Description("Filter to videos only (true) or images only (false)")] bool? isVideo = null,
+        [Description("Project identifier (uses default project if not specified)")] string? project = null)
     {
         var response = await client.ListImagesAsync(
-            Math.Min(limit, 50), cursor,
-            search: search, category: category, keyword: keyword, author: author, isVideo: isVideo);
+            Math.Min(limit, 50), cursor, project: project,
+            search: search, category: category, keyword: keyword, author: author, isVideo: isVideo, folder: folder);
 
         if (response.Images.Count == 0)
             return "No images found.";
@@ -50,8 +55,9 @@ public sealed class ImageTools
 
         foreach (var img in response.Images)
         {
-            var badge = img.IsVideo ? " [VIDEO]" : img.IsSvg ? " [SVG]" : "";
-            lines.Add($"- {img.ImageId}{badge}: {img.OriginalFileName} ({img.Width}x{img.Height}, {img.FormattedSize})");
+            var badge = img.IsVideo ? " [VIDEO]" : img.IsSvg ? " [SVG]" : img.IsEps ? " [EPS]" : "";
+            var loc = img.Folder is not null ? $" @{img.Folder}" : "";
+            lines.Add($"- {img.ImageId}{badge}: {img.OriginalFileName} ({img.Width}x{img.Height}, {img.FormattedSize}){loc}");
         }
 
         if (response.NextCursor is not null)
@@ -63,8 +69,11 @@ public sealed class ImageTools
     [McpServerTool, Description("Delete an image and all its cached variants from Pixault.")]
     public static async Task<string> DeleteImage(
         PixaultAdminClient client,
+        AgentScope scope,
         [Description("The image ID to delete (e.g. 'img_01JKABC')")] string imageId)
     {
+        if (scope.CheckDelete() is { } denied) return denied;
+
         await client.DeleteImageAsync(imageId);
         return $"Image '{imageId}' deleted successfully.";
     }
@@ -82,7 +91,10 @@ public sealed class ImageTools
         [Description("Quality 1-100 (default 85)")] int? quality = null,
         [Description("Blur radius 1-100")] int? blur = null,
         [Description("Output format: webp, jpeg, png, avif")] string? format = null,
-        [Description("Named transform preset to apply")] string? transform = null)
+        [Description("Named transform preset to apply")] string? transform = null,
+        [Description("Watermark ID to overlay (must already exist for the project)")] string? watermarkId = null,
+        [Description("Watermark position: tl, tr, bl, br, c (center), tile (default br)")] string? watermarkPosition = null,
+        [Description("Watermark opacity 0-100 (default 30)")] int? watermarkOpacity = null)
     {
         var builder = imageService.For(project, imageId);
 
@@ -92,9 +104,42 @@ public sealed class ImageTools
         if (fit is not null) builder.Fit(ParseFitMode(fit));
         if (quality.HasValue) builder.Quality(quality.Value);
         if (blur.HasValue) builder.Blur(blur.Value);
+        if (watermarkId is not null)
+            builder.Watermark(watermarkId, ParseWmPosition(watermarkPosition), watermarkOpacity ?? 30);
         if (format is not null) builder.Format(format);
 
         return builder.Build();
+    }
+
+    [McpServerTool, Description(
+        "Generate a ready-to-paste responsive HTML embed for an image. Returns either an <img> tag with a " +
+        "srcset (auto format negotiation) or a <picture> element with AVIF/WebP sources and a JPEG fallback. " +
+        "Ideal for dropping into web pages with correct SEO, lazy-loading, and responsive sizing.")]
+    public static string BuildImageEmbed(
+        PixaultImageService imageService,
+        [Description("Project identifier")] string project,
+        [Description("Image ID")] string imageId,
+        [Description("Alt text for the image (required for accessibility and SEO)")] string alt,
+        [Description("Embed style: 'img' (single tag, auto format) or 'picture' (AVIF/WebP/JPEG sources). Default 'picture'.")] string style = "picture",
+        [Description("Comma-separated candidate widths in pixels (default '400,800,1200')")] string? widths = null,
+        [Description("CSS 'sizes' attribute describing layout width (default '100vw')")] string sizes = "100vw",
+        [Description("Loading strategy: 'lazy' or 'eager' (default 'lazy')")] string loading = "lazy",
+        [Description("Optional CSS class to apply to the tag")] string? cssClass = null,
+        [Description("Named transform preset to apply before sizing")] string? transform = null)
+    {
+        var builder = imageService.For(project, imageId);
+        if (transform is not null) builder.Transform(transform);
+
+        var widthArray = widths?
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(w => int.TryParse(w, out var v) ? v : 0)
+            .Where(v => v > 0)
+            .ToArray();
+        if (widthArray is { Length: 0 }) widthArray = null;
+
+        return style.Equals("img", StringComparison.OrdinalIgnoreCase)
+            ? builder.ToImgTag(alt, widthArray, sizes, loading, cssClass)
+            : builder.ToPictureTag(alt, widthArray, sizes, loading, cssClass);
     }
 
     private static FitMode ParseFitMode(string fit) => fit.ToLowerInvariant() switch
@@ -104,6 +149,17 @@ public sealed class ImageTools
         "fill" => FitMode.Fill,
         "pad" => FitMode.Pad,
         _ => FitMode.Cover
+    };
+
+    private static WmPosition ParseWmPosition(string? pos) => pos?.ToLowerInvariant() switch
+    {
+        "tl" => WmPosition.TopLeft,
+        "tr" => WmPosition.TopRight,
+        "bl" => WmPosition.BottomLeft,
+        "br" => WmPosition.BottomRight,
+        "c" or "center" => WmPosition.Center,
+        "tile" => WmPosition.Tile,
+        _ => WmPosition.BottomRight
     };
 
     private static string GetContentType(string fileName)

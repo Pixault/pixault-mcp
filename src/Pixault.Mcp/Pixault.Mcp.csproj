@@ -6,7 +6,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <RootNamespace>Pixault.Mcp</RootNamespace>
-    <Version>1.0.2</Version>
+    <Version>1.1.0</Version>
     <AssemblyName>pixault-mcp</AssemblyName>
     <PackAsTool>true</PackAsTool>
     <ToolCommandName>pixault-mcp</ToolCommandName>
@@ -18,7 +18,7 @@
     <Authors>Endpoint Systems</Authors>
     <Company>Endpoint Systems</Company>
     <Copyright>Copyright (c) Endpoint Systems. All rights reserved.</Copyright>
-    <Description>MCP server for the Pixault image CDN. Exposes image, metadata, transform, plugin, and documentation tools for AI assistants.</Description>
+    <Description>MCP server for the Pixault image CDN. Exposes image, metadata, watermark, folder, transform, plugin, and documentation tools for AI assistants.</Description>
     <PackageTags>pixault;mcp;model-context-protocol;ai;image;cdn</PackageTags>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageProjectUrl>https://pixault.io</PackageProjectUrl>

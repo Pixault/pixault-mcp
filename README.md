@@ -5,9 +5,12 @@
 ## Features
 
 - **Image management** — list, search, upload, and delete images
-- **Folder operations** — create, list, and navigate folders
-- **Transformations** — apply and manage named transforms
-- **Plugin marketplace** — browse and install plugins
+- **Metadata** — read and edit Schema.org fields, geo-location, folders, custom tags; strip EXIF
+- **Folder operations** — create, list, and delete folders; filter images by folder
+- **Transformations** — apply and manage named transforms; build CDN and responsive embed URLs
+- **Watermarks** — upload, list, and delete watermark images
+- **EPS / vector** — split multi-design EPS files, extract SVG, inspect derived assets
+- **Plugin marketplace** — browse, activate, and deactivate plugins
 - **Documentation** — embedded API docs available as resources
 
 ## Installation
@@ -48,6 +51,22 @@ dotnet run --project src/Pixault.Mcp
 | `PIXAULT_PROJECT` | Yes | Default project identifier |
 | `PIXAULT_API_KEY` | Yes | API key for authentication |
 | `PIXAULT_HMAC_SECRET` | No | HMAC secret for signed URL generation |
+
+> The `Pixault__BaseUrl` / `Pixault__Project` (double-underscore) form is also accepted for every setting.
+
+### Agent scoping
+
+Restrict what the AI assistant can do through this server. Read operations and URL/embed
+generation are always allowed; the flags below gate mutating tools.
+
+| Environment Variable | Default | Gates |
+|---------------------|---------|-------|
+| `PIXAULT_ALLOW_WRITE` | `true` | Uploads, metadata edits, transform/watermark/folder creation, EXIF strip, EPS jobs |
+| `PIXAULT_ALLOW_DELETE` | `false` | Deleting images, transforms, watermarks, folders |
+| `PIXAULT_ALLOW_PLUGINS` | `false` | Activating / deactivating marketplace plugins |
+
+When a category is disabled, the corresponding tools return a clear "permission denied"
+message instead of performing the operation.
 
 ## Dependencies
 

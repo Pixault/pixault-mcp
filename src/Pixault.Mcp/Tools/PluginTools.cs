@@ -56,9 +56,12 @@ public sealed class PluginTools
     [McpServerTool, Description("Activate a marketplace plugin for a project. Once activated, the plugin can be invoked via URL parameters.")]
     public static async Task<string> ActivatePlugin(
         PixaultAdminClient client,
+        AgentScope scope,
         [Description("Project identifier")] string project,
         [Description("Plugin name to activate (e.g. 'background-removal', 'smart-crop', 'image-filter')")] string pluginName)
     {
+        if (scope.CheckPluginManagement() is { } denied) return denied;
+
         await client.ActivatePluginAsync(project, pluginName);
         return $"Plugin '{pluginName}' activated for project '{project}'.";
     }
@@ -66,9 +69,12 @@ public sealed class PluginTools
     [McpServerTool, Description("Deactivate a marketplace plugin for a project.")]
     public static async Task<string> DeactivatePlugin(
         PixaultAdminClient client,
+        AgentScope scope,
         [Description("Project identifier")] string project,
         [Description("Plugin name to deactivate")] string pluginName)
     {
+        if (scope.CheckPluginManagement() is { } denied) return denied;
+
         await client.DeactivatePluginAsync(project, pluginName);
         return $"Plugin '{pluginName}' deactivated for project '{project}'.";
     }

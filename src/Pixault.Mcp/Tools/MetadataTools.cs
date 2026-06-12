@@ -34,6 +34,8 @@ public sealed class MetadataTools
             if (meta.ThumbnailId is not null) lines.Add($"Thumbnail: {meta.ThumbnailId}");
         }
 
+        if (meta.IsEps) lines.Add("EPS: yes (vector source — see EPS tools for derived assets)");
+        if (meta.Folder is not null) lines.Add($"Folder: {meta.Folder}");
         if (meta.Name is not null) lines.Add($"Name: {meta.Name}");
         if (meta.Description is not null) lines.Add($"Description: {meta.Description}");
         if (meta.Caption is not null) lines.Add($"Caption: {meta.Caption}");
@@ -42,43 +44,105 @@ public sealed class MetadataTools
         if (meta.Author is not null) lines.Add($"Author: {meta.Author}");
         if (meta.CopyrightHolder is not null) lines.Add($"Copyright: {meta.CopyrightHolder} ({meta.CopyrightYear})");
         if (meta.License is not null) lines.Add($"License: {meta.License}");
+        if (meta.DateCreated is { } dc) lines.Add($"Date Created: {dc:yyyy-MM-dd}");
+        if (meta.DatePublished is { } dp) lines.Add($"Date Published: {dp:yyyy-MM-dd}");
+        if (meta.RepresentativeOfPage == true) lines.Add("Representative of page: yes");
+        if (meta.LocationName is not null) lines.Add($"Location: {meta.LocationName}");
+        if (meta.LocationLatitude is { } lat && meta.LocationLongitude is { } lon)
+            lines.Add($"Coordinates: {lat}, {lon}");
         if (meta.Tags is { Count: > 0 }) lines.Add($"Tags: {string.Join(", ", meta.Tags.Select(t => $"{t.Key}={t.Value}"))}");
 
         return string.Join("\n", lines);
     }
 
     [McpServerTool, Description(
-        "Update Schema.org metadata fields on an image. Supports name, description, caption, category, keywords, author, copyright, license, and custom tags.")]
+        "Update Schema.org metadata fields on an image. Supports name, description, caption, category, folder, " +
+        "keywords, author, copyright, license, creation/publish dates, geo-location, page-representative flag, " +
+        "and custom tags. Only the fields you pass are changed.")]
     public static async Task<string> UpdateImageMetadata(
         PixaultAdminClient client,
+        AgentScope scope,
         [Description("The image ID to update")] string imageId,
         [Description("Display name for the image")] string? name = null,
         [Description("Image description for SEO and accessibility")] string? description = null,
         [Description("Image caption")] string? caption = null,
         [Description("Category (e.g. 'product', 'hero', 'gallery')")] string? category = null,
+        [Description("Folder path to file the image under (e.g. 'products/hero')")] string? folder = null,
         [Description("Comma-separated keywords")] string? keywords = null,
         [Description("Author name")] string? author = null,
         [Description("Copyright holder name")] string? copyrightHolder = null,
         [Description("Copyright year")] int? copyrightYear = null,
-        [Description("License identifier (e.g. 'CC-BY-4.0')")] string? license = null)
+        [Description("License identifier (e.g. 'CC-BY-4.0')")] string? license = null,
+        [Description("Creation date in ISO 8601 (e.g. '2026-01-15')")] string? dateCreated = null,
+        [Description("Publish date in ISO 8601 (e.g. '2026-01-15')")] string? datePublished = null,
+        [Description("Marks this image as representative of its page (Schema.org representativeOfPage)")] bool? representativeOfPage = null,
+        [Description("Geo latitude where the image was taken")] double? locationLatitude = null,
+        [Description("Geo longitude where the image was taken")] double? locationLongitude = null,
+        [Description("Human-readable location name")] string? locationName = null,
+        [Description("Comma-separated custom tags as key=value pairs (e.g. 'sku=A100,season=fall')")] string? tags = null)
     {
+        if (scope.CheckWrite() is { } denied) return denied;
+
         var update = new MetadataUpdate
         {
             Name = name,
             Description = description,
             Caption = caption,
             Category = category,
+            Folder = folder,
             Keywords = keywords?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList(),
             Author = author,
             CopyrightHolder = copyrightHolder,
             CopyrightYear = copyrightYear,
-            License = license
+            License = license,
+            DateCreated = ParseDate(dateCreated),
+            DatePublished = ParseDate(datePublished),
+            RepresentativeOfPage = representativeOfPage,
+            LocationLatitude = locationLatitude,
+            LocationLongitude = locationLongitude,
+            LocationName = locationName,
+            Tags = ParseTags(tags)
         };
 
         var result = await client.UpdateMetadataAsync(imageId, update);
         return result is not null
             ? $"Metadata updated for '{imageId}'."
             : $"Failed to update metadata for '{imageId}'.";
+    }
+
+    [McpServerTool, Description(
+        "Strip EXIF metadata (camera, GPS, timestamps) from an image's stored original. Useful for privacy " +
+        "before publishing. Returns the updated metadata. This rewrites the original asset and cannot be undone.")]
+    public static async Task<string> StripExif(
+        PixaultAdminClient client,
+        AgentScope scope,
+        [Description("The image ID to strip EXIF data from")] string imageId,
+        [Description("Project identifier (uses default project if not specified)")] string? project = null)
+    {
+        if (scope.CheckWrite() is { } denied) return denied;
+
+        var result = await client.StripExifAsync(imageId, project);
+        return result is not null
+            ? $"EXIF data stripped from '{imageId}'."
+            : $"Failed to strip EXIF from '{imageId}'.";
+    }
+
+    private static DateTimeOffset? ParseDate(string? value) =>
+        DateTimeOffset.TryParse(value, out var d) ? d : null;
+
+    private static Dictionary<string, string>? ParseTags(string? tags)
+    {
+        if (string.IsNullOrWhiteSpace(tags))
+            return null;
+
+        var result = new Dictionary<string, string>();
+        foreach (var pair in tags.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var idx = pair.IndexOf('=');
+            if (idx > 0)
+                result[pair[..idx].Trim()] = pair[(idx + 1)..].Trim();
+        }
+        return result.Count > 0 ? result : null;
     }
 
     [McpServerTool, Description(

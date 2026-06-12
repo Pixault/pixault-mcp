@@ -73,6 +73,7 @@ public sealed class TransformTools
         "configurations. Parameters can be locked to prevent client override (useful for enforcing watermarks).")]
     public static async Task<string> SaveTransform(
         PixaultAdminClient client,
+        AgentScope scope,
         [Description("Preset name (lowercase alphanumeric + hyphens, max 32 chars)")] string name,
         [Description("Target width in pixels")] int? width = null,
         [Description("Target height in pixels")] int? height = null,
@@ -84,6 +85,8 @@ public sealed class TransformTools
         [Description("Watermark opacity 0-100")] int? watermarkOpacity = null,
         [Description("Comma-separated parameter names to lock (e.g. 'watermark,quality')")] string? lockedParameters = null)
     {
+        if (scope.CheckWrite() is { } denied) return denied;
+
         var save = new NamedTransformSave
         {
             Width = width,
@@ -108,8 +111,11 @@ public sealed class TransformTools
     [McpServerTool, Description("Delete a named transform preset.")]
     public static async Task<string> DeleteTransform(
         PixaultAdminClient client,
+        AgentScope scope,
         [Description("Transform preset name to delete")] string name)
     {
+        if (scope.CheckDelete() is { } denied) return denied;
+
         await client.DeleteTransformAsync(name);
         return $"Transform '{name}' deleted.";
     }
