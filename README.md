@@ -7,13 +7,20 @@
 - **Image management** — list, search, upload, and delete images
 - **Metadata** — read and edit Schema.org fields, geo-location, folders, custom tags; strip EXIF
 - **Folder operations** — create, list, and delete folders; filter images by folder
-- **Transformations** — apply and manage named transforms; build CDN and responsive embed URLs
+- **Transformations** — apply and manage named transforms; build CDN URLs, responsive `<img>`/`<picture>` embeds, and fetch Schema.org JSON-LD
 - **Watermarks** — upload, list, and delete watermark images
 - **EPS / vector** — split multi-design EPS files, extract SVG, inspect derived assets
 - **Plugin marketplace** — browse, activate, and deactivate plugins
-- **Documentation** — embedded API docs available as resources
+- **Documentation** — search embedded API docs, or browse them as MCP **resources**
+- **Resources** — bundled docs at `pixault://docs/{topic}` and live image metadata at `pixault://{project}/{imageId}/metadata`
 
 ## Installation
+
+Install the server as a .NET tool:
+
+```bash
+dotnet tool install --global Pixault.Mcp
+```
 
 ### Claude Desktop / Claude Code
 
@@ -23,12 +30,11 @@ Add to your MCP configuration:
 {
   "mcpServers": {
     "pixault": {
-      "command": "dotnet",
-      "args": ["run", "--project", "src/Pixault.Mcp"],
+      "command": "pixault-mcp",
       "env": {
         "PIXAULT_BASE_URL": "https://img.pixault.io",
         "PIXAULT_PROJECT": "my-project",
-        "PIXAULT_API_KEY": "pk_your_api_key"
+        "PIXAULT_API_KEY": "your-api-key"
       }
     }
   }
@@ -38,7 +44,7 @@ Add to your MCP configuration:
 ### From source
 
 ```bash
-git clone https://github.com/pixault/pixault-mcp.git
+git clone https://github.com/Pixault/pixault-mcp.git
 cd pixault-mcp
 dotnet run --project src/Pixault.Mcp
 ```
@@ -67,6 +73,17 @@ generation are always allowed; the flags below gate mutating tools.
 
 When a category is disabled, the corresponding tools return a clear "permission denied"
 message instead of performing the operation.
+
+## Resources
+
+Alongside the model-invoked tools, the server exposes read-only MCP **resources** the host can
+browse and attach to context:
+
+| URI | Description |
+|-----|-------------|
+| `pixault://docs` | Index of the bundled documentation topics |
+| `pixault://docs/{topic}` | A documentation page (e.g. `pixault://docs/quick-start`) |
+| `pixault://{project}/{imageId}/metadata` | Live Schema.org metadata for an image, as JSON |
 
 ## Dependencies
 

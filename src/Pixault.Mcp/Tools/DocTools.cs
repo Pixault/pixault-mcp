@@ -41,12 +41,6 @@ public sealed class DocTools
         ["react"] = "integration-react.md",
         ["vue"] = "integration-vue.md",
         ["wordpress"] = "integration-wordpress.md",
-        ["oqtane"] = "integration-oqtane.md",
-        ["mcp"] = "integration-mcp.md",
-        ["model context protocol"] = "integration-mcp.md",
-        ["ai agent"] = "integration-ai-agent.md",
-        ["chat"] = "integration-ai-agent.md",
-        ["pixaultchat"] = "integration-ai-agent.md",
         ["plugins"] = "api-plugins.md",
         ["marketplace"] = "api-plugins.md",
         ["background removal"] = "api-plugins.md",
@@ -58,7 +52,7 @@ public sealed class DocTools
     [McpServerTool, Description(
         "Search Pixault documentation by topic. Returns the full content of the matching documentation page. " +
         "Available topics: overview, quick-start, architecture, image delivery, upload, metadata, transforms, " +
-        "billing, plugins, dotnet, javascript, python, php, blazor, react, vue, wordpress, oqtane, mcp, ai agent.")]
+        "plugins, billing, dotnet, javascript, python, php, blazor, react, vue, wordpress.")]
     public static string SearchDocs(
         [Description("Topic to search for (e.g. 'upload', 'transforms', 'blazor', 'quick-start')")] string query)
     {
@@ -96,9 +90,10 @@ public sealed class DocTools
 
             API Reference:
             - api-image-delivery: Image transformation and CDN delivery endpoints
-            - api-upload: File upload endpoint (images and videos)
+            - api-upload: File upload endpoint (images, video, EPS)
             - api-metadata: Schema.org metadata management
             - api-transforms: Named transform presets
+            - api-plugins: Plugin marketplace and per-project activation
 
             SDKs:
             - sdk-dotnet: .NET/C# client SDK
@@ -111,9 +106,6 @@ public sealed class DocTools
             - integration-react: React integration
             - integration-vue: Vue.js integration
             - integration-wordpress: WordPress plugin
-            - integration-oqtane: Oqtane Blazor CMS module
-            - integration-mcp: MCP server for AI assistants
-            - integration-ai-agent: Embedded AI agent and PixaultChat
 
             Billing:
             - billing-and-plans: Pricing plans and usage billing

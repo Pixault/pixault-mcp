@@ -24,23 +24,25 @@ Client Request
 │                             │
 │  1. Rate limiting           │
 │  2. URL parsing             │
-│  3. Signature validation    │
+│  3. Signature validation*   │
 │  4. Cache check             │
-│  5. Transform               │
+│  5. Transform / rasterize   │
 │  6. Store variant            │
 │  7. Respond + cache headers │
 └─────────────────────────────┘
                 │
                 ▼
 ┌─────────────────────────────┐
-│  Cloud Storage              │
-│  • Originals bucket         │
-│  • Cache bucket (variants)  │
-│  • Metadata bucket          │
-│  • Watermarks bucket        │
-│  • Transforms bucket        │
+│  Object Storage             │
+│  • Originals                │
+│  • Cached variants          │
+│  • Metadata                 │
+│  • Watermarks               │
+│  • Transform definitions    │
 └─────────────────────────────┘
 ```
+
+\* Signature validation applies only to signed `original.{format}` downloads (see below); it is not run on every request.
 
 ## CDN Layer
 
@@ -69,8 +71,16 @@ Pixault performs all image transformations on-demand:
 | Blur | Gaussian blur via `SKImageFilter` |
 | Watermark | Composite overlay with position and opacity |
 | SVG | Sanitization + optional rasterization |
+| EPS / PostScript | Vector assets are rasterized on delivery; multi-design EPS can be split and embedded SVG extracted |
 
 Processing happens on-demand and results are cached. The cache key is a SHA256 hash of the transformation parameters, ensuring deterministic variant identification.
+
+### Delivery Paths
+
+Beyond on-demand transformed images, Pixault serves two other first-class asset types:
+
+- **EPS / PostScript** — Vector uploads are rasterized for delivery. A multi-design EPS can be split into its constituent designs, and embedded SVG can be extracted as a derived asset.
+- **Video** — Video files are streamed over HTTP range requests from `/{project}/{videoId}/video.{ext}` (e.g. `mp4`, `webm`, `mov`), enabling seeking and partial-content playback.
 
 ## Multi-Project Isolation
 
@@ -85,35 +95,31 @@ Projects share the same API infrastructure but have no visibility into each othe
 
 ## Storage Architecture
 
-```
-pixault-originals/{project}/{imageId}
-pixault-cache/{project}/{imageId}/{variant-hash}
-pixault-metadata/{project}/{imageId}.json
-pixault-watermarks/{project}/{watermarkId}
-pixault-transforms/{project}/{transformName}.json
-```
+Pixault keeps each asset class in object storage, namespaced per project:
 
-| Bucket | Purpose | Retention |
-|--------|---------|-----------|
+| Class | Purpose | Retention |
+|-------|---------|-----------|
 | Originals | Uploaded files | Until deleted |
 | Cache | Transformed variants | Auto-expires, regenerated on demand |
-| Metadata | Image metadata JSON | Mirrors originals lifecycle |
+| Metadata | Image metadata | Mirrors originals lifecycle |
 | Watermarks | Watermark overlay images | Until deleted |
 | Transforms | Named transform definitions | Until deleted |
+
+Within each class, objects are keyed by project and image ID (and, for cached variants, by a hash of the transform parameters).
 
 ## Billing Engine
 
 The billing system tracks usage per subscription:
 
 - **Bandwidth** — Bytes served on each image response
-- **Storage** — Total bytes stored (originals only)
+- **Storage** — Total bytes stored (originals)
 - **Projects** — Count of active project identifiers
 
-Usage snapshots are recorded daily per project for historical analytics and invoice generation. Overages are calculated at the end of each billing period.
+Usage snapshots are recorded per project for historical analytics and invoice generation. Overages are calculated at the end of each billing period.
 
 ## API Authentication
 
-Two authentication models:
+Pixault uses two distinct auth paths: browser sessions for the dashboard, and a single API key for all programmatic access.
 
 ### Dashboard (Browser)
 
@@ -123,10 +129,11 @@ Two authentication models:
 
 ### API (Machine-to-Machine)
 
-- Client ID + Client Secret headers
-- SHA256-hashed key storage (secrets never stored in plaintext)
-- Per-key rate limiting (100 req/min)
-- Optional project scoping per key
+- A single `X-Api-Key` header authenticates every API request — there is no client-id/client-secret pair
+- Hashed key storage (secrets never stored in plaintext)
+- Per-key and per-project rate limiting
+
+For signed `original.{format}` downloads, requests additionally carry `sig` and `exp` query parameters when an HMAC secret is configured; this signature check is the only request-time validation beyond the API key.
 
 ## Observability
 
@@ -139,20 +146,10 @@ Two authentication models:
 
 ## Custom Domains
 
-Growth, Pro, and Business plans support custom domains:
+Paid plans support custom domains:
 
 ```
 images.yourdomain.com → CNAME → img.pixault.io
 ```
 
 SSL is handled automatically. Images are served from your own domain with full CDN caching.
-
-## Performance Characteristics
-
-| Metric | Typical Value |
-|--------|--------------|
-| CDN cache hit latency | < 50ms (edge) |
-| Transform (resize + encode) | 50–200ms |
-| Original fetch | 10–30ms |
-| Cached variant fetch | 10–30ms |
-| Cold start | < 2s |

@@ -157,4 +157,20 @@ public sealed class MetadataTools
         var apiBase = baseUrl.Split($"/{project}/")[0];
         return $"GET {apiBase}/api/{project}/{imageId}/metadata/jsonld";
     }
+
+    [McpServerTool, Description(
+        "Fetch the Schema.org JSON-LD structured-data document for an image. Returns the JSON-LD body itself " +
+        "(ready to embed in a <script type=\"application/ld+json\"> tag), not just the endpoint URL.")]
+    public static async Task<string> GetJsonLd(
+        IHttpClientFactory httpFactory,
+        [Description("Project identifier")] string project,
+        [Description("Image ID")] string imageId)
+    {
+        var http = httpFactory.CreateClient("PixaultApi");
+        var response = await http.GetAsync($"api/{project}/{imageId}/metadata/jsonld");
+        if (!response.IsSuccessStatusCode)
+            return $"Failed to fetch JSON-LD for '{imageId}' ({(int)response.StatusCode} {response.ReasonPhrase}).";
+
+        return await response.Content.ReadAsStringAsync();
+    }
 }

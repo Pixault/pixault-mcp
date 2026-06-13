@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
 using ModelContextProtocol;
 using Pixault.Client;
 using Pixault.Mcp;
@@ -33,9 +34,20 @@ builder.Services.AddSingleton(new AgentPermissions
 });
 builder.Services.AddSingleton<AgentScope>();
 
+// Named client for raw API reads the SDK doesn't wrap (e.g. the JSON-LD document body).
+// Mirrors the SDK's own client config: API base URL + X-Api-Key header.
+builder.Services.AddHttpClient("PixaultApi", (sp, client) =>
+{
+    var options = sp.GetRequiredService<IOptions<PixaultOptions>>().Value;
+    client.BaseAddress = new Uri(options.BaseUrl);
+    if (!string.IsNullOrEmpty(options.ApiKey))
+        client.DefaultRequestHeaders.Add("X-Api-Key", options.ApiKey);
+});
+
 builder.Services
     .AddMcpServer()
     .WithStdioServerTransport()
-    .WithToolsFromAssembly();
+    .WithToolsFromAssembly()
+    .WithResourcesFromAssembly();
 
 await builder.Build().RunAsync();

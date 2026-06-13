@@ -1,185 +1,158 @@
 # Named Transforms
 
-Named transforms are reusable transformation presets that you define once and reference by name in image URLs. They enforce consistent image dimensions and quality across your application.
+Named transforms are reusable, server-side transformation presets. You define a set of transform parameters once under a short name, then reference that name in delivery URLs with `t_{name}` instead of repeating raw parameters.
 
-## Why Named Transforms?
+## Why named transforms?
 
-- **Consistency** — Ensure all thumbnails, gallery images, and hero images use identical parameters
-- **Security** — Lock parameters so clients can't request arbitrary sizes
-- **Simplicity** — Use `t_thumbnail` instead of `w_200,h_200,fit_cover,q_80`
-- **Maintainability** — Change dimensions in one place, all URLs update automatically
+- **Reuse** — define `thumbnail` once, use `t_thumbnail` everywhere instead of `w_200,h_200,fit_cover,q_80`.
+- **Consistency** — every caller gets identical dimensions, quality, and watermarking.
+- **Enforcement** — lock specific parameters so client URL params can't override them. This is how you guarantee a watermark or cap the output size regardless of what the client requests.
+- **Maintainability** — change the preset in one place; every URL that references it updates.
 
-## Usage in URLs
+## Authentication
+
+All transform-management endpoints require a single header:
 
 ```
-# Apply a named transform
-https://img.pixault.io/myapp/img_01JK/t_thumbnail.webp
-
-# Named transform with overrides (if allowed)
-https://img.pixault.io/myapp/img_01JK/t_gallery,w_400.webp
+X-Api-Key: <your-api-key>
 ```
 
-When a parameter is **locked** in the transform definition, URL overrides for that parameter are ignored.
+## Endpoints
 
-## API Reference
+| Method | Path | Purpose |
+|--------|------|---------|
+| `GET` | `/api/{project}/transforms` | List all named transforms |
+| `GET` | `/api/{project}/transforms/{name}` | Get one named transform |
+| `PUT` | `/api/{project}/transforms/{name}` | Create or update (upsert) |
+| `DELETE` | `/api/{project}/transforms/{name}` | Delete |
 
-All endpoints require API key authentication.
+There is no `POST` — creates and updates both go through `PUT /api/{project}/transforms/{name}` (upsert).
 
-### Create a Named Transform
+### Name rules
 
-**`POST /api/{project}/transforms`**
+The transform `{name}` must match `^[a-z0-9][a-z0-9\-]{0,31}$`:
+
+- lowercase letters and digits only, plus hyphens
+- must start with a letter or digit
+- max 32 characters
+- no underscores, no uppercase
+
+## Request body (PUT)
+
+The body is a flat JSON object. Every field is optional — send only what the preset needs.
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `width` | int | Target width in pixels |
+| `height` | int | Target height in pixels |
+| `fitMode` | string | `cover`, `contain`, `fill`, or `pad` |
+| `quality` | int | 1–100 |
+| `blur` | int | Blur radius |
+| `watermarkId` | string | ID of a watermark (see Watermarks) |
+| `watermarkPosition` | string | `tl`, `tr`, `bl`, `br`, `c`, or `tile` |
+| `watermarkOpacity` | int | 0–100 |
+| `plugins` | object | Per-plugin settings applied by this transform |
+| `lockedPlugins` | string[] | Plugin names the client cannot toggle off |
+| `lockedParameters` | string[] | Parameters the client cannot override via URL |
+
+Valid `lockedParameters` values: `width`, `height`, `fitMode`, `quality`, `blur`, `watermarkId`, `watermarkPosition`, `watermarkOpacity`.
+
+### Example: create or update a `thumbnail` transform
 
 ```bash
-curl -X POST https://img.pixault.io/api/myapp/transforms \
-  -H "X-Client-Id: px_cl_abc123" \
-  -H "X-Client-Secret: pk_secret456" \
+curl -X PUT https://img.pixault.io/api/myapp/transforms/thumbnail \
+  -H "X-Api-Key: <your-api-key>" \
   -H "Content-Type: application/json" \
   -d '{
-    "name": "thumbnail",
-    "parameters": {
-      "w": 200,
-      "h": 200,
-      "fit": "cover",
-      "q": 80
-    },
-    "locked": ["w", "h", "fit"],
-    "description": "Standard thumbnail for grid views"
+    "width": 200,
+    "height": 200,
+    "fitMode": "cover",
+    "quality": 80,
+    "lockedParameters": ["width", "height", "fitMode"]
   }'
 ```
 
-#### Request Body
+### Response
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `name` | string | Yes | Transform name (alphanumeric, hyphens, underscores) |
-| `parameters` | object | Yes | Default transform parameters |
-| `locked` | string[] | No | Parameters that cannot be overridden via URL |
-| `description` | string | No | Human-readable description |
-
-#### Response `201 Created`
+The response is a flat `NamedTransformDto`:
 
 ```json
 {
   "name": "thumbnail",
-  "parameters": { "w": 200, "h": 200, "fit": "cover", "q": 80 },
-  "locked": ["w", "h", "fit"],
-  "description": "Standard thumbnail for grid views",
-  "createdAt": "2025-03-15T10:00:00Z"
+  "projectId": "myapp",
+  "width": 200,
+  "height": 200,
+  "fitMode": "cover",
+  "quality": 80,
+  "blur": null,
+  "watermarkId": null,
+  "watermarkPosition": null,
+  "watermarkOpacity": null,
+  "plugins": null,
+  "lockedPlugins": [],
+  "lockedParameters": ["width", "height", "fitMode"]
 }
 ```
 
-### List Named Transforms
+`GET /api/{project}/transforms` returns an array of these objects.
 
-**`GET /api/{project}/transforms`**
+## Applying a transform in a delivery URL
+
+Reference a transform with the `t_{name}` token in a public delivery URL (delivery URLs are unauthenticated and served from the CDN — no `/api` prefix):
+
+```
+https://img.pixault.io/myapp/img_01JK/t_thumbnail.webp
+```
+
+You can combine `t_{name}` with explicit transform params in the same comma-separated segment:
+
+```
+https://img.pixault.io/myapp/img_01JK/t_gallery,w_400.webp
+```
+
+### How overrides and locked params interact
+
+1. Start from the transform's preset values.
+2. Apply any explicit URL params (`w_`, `h_`, `fit_`, `q_`, `blur_`, `wm_`, `wm_pos_`, `wm_opacity_`) as overrides.
+3. Drop any override that targets a parameter listed in `lockedParameters` — the preset value wins.
+
+```
+# transform "gallery" = { width: 800, height: 600, fitMode: cover, quality: 85 }
+#                        lockedParameters: ["width", "height"]
+
+# URL: /myapp/img_01JK/t_gallery,q_90,w_400.webp
+# Result: width=800, height=600, fitMode=cover, quality=90
+#         (q_90 applied; w_400 dropped because width is locked)
+```
+
+## Enforcing a watermark
+
+Lock the watermark parameters so no client URL can strip or move the watermark:
 
 ```bash
-curl https://img.pixault.io/api/myapp/transforms \
-  -H "X-Client-Id: px_cl_abc123" \
-  -H "X-Client-Secret: pk_secret456"
+curl -X PUT https://img.pixault.io/api/myapp/transforms/download \
+  -H "X-Api-Key: <your-api-key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "width": 1200,
+    "quality": 90,
+    "watermarkId": "company-logo",
+    "watermarkPosition": "br",
+    "watermarkOpacity": 30,
+    "lockedParameters": ["watermarkId", "watermarkPosition", "watermarkOpacity"]
+  }'
 ```
 
-#### Response `200 OK`
+Any request to `…/t_download.webp` now carries the watermark, and `…/t_download,wm_opacity_0.webp` still renders at opacity 30 because `watermarkOpacity` is locked.
 
-```json
-{
-  "transforms": [
-    {
-      "name": "thumbnail",
-      "parameters": { "w": 200, "h": 200, "fit": "cover", "q": 80 },
-      "locked": ["w", "h", "fit"],
-      "description": "Standard thumbnail for grid views"
-    },
-    {
-      "name": "gallery",
-      "parameters": { "w": 800, "q": 85 },
-      "locked": [],
-      "description": "Gallery view — width locked, quality adjustable"
-    }
-  ]
-}
-```
+## Watermarks
 
-### Get a Named Transform
+`watermarkId` values refer to watermarks managed through the watermark API:
 
-**`GET /api/{project}/transforms/{name}`**
+| Method | Path | Purpose |
+|--------|------|---------|
+| `GET` | `/api/{project}/watermarks` | List watermarks |
+| `PUT` | `/api/{project}/watermarks/{id}` | Upload/replace a watermark (raw image body) |
+| `DELETE` | `/api/{project}/watermarks/{id}` | Delete a watermark |
 
-### Update a Named Transform
-
-**`PUT /api/{project}/transforms/{name}`**
-
-Send the full transform definition. All fields are replaced.
-
-### Delete a Named Transform
-
-**`DELETE /api/{project}/transforms/{name}`**
-
-Returns `204 No Content`.
-
-## Common Transform Presets
-
-Here are recommended presets for typical use cases:
-
-### Thumbnails
-
-```json
-{
-  "name": "thumb",
-  "parameters": { "w": 200, "h": 200, "fit": "cover", "q": 80 },
-  "locked": ["w", "h", "fit"]
-}
-```
-
-### Gallery
-
-```json
-{
-  "name": "gallery",
-  "parameters": { "w": 800, "h": 600, "fit": "cover", "q": 85 },
-  "locked": ["w", "h"]
-}
-```
-
-### Hero / Banner
-
-```json
-{
-  "name": "hero",
-  "parameters": { "w": 1920, "h": 600, "fit": "cover", "q": 90 },
-  "locked": ["w", "h", "fit"]
-}
-```
-
-### LQIP Placeholder
-
-```json
-{
-  "name": "lqip",
-  "parameters": { "w": 40, "q": 20, "blur": 10 },
-  "locked": ["w", "q", "blur"]
-}
-```
-
-### Watermarked Download
-
-```json
-{
-  "name": "download_wm",
-  "parameters": { "w": 1200, "q": 90, "wm": "company_logo", "wm_pos": "br", "wm_opacity": 30 },
-  "locked": ["wm", "wm_pos", "wm_opacity"]
-}
-```
-
-## Parameter Resolution
-
-When a named transform is used alongside explicit URL parameters, Pixault resolves them in this order:
-
-1. Start with the named transform's default parameters
-2. Apply URL parameters as overrides
-3. Skip overrides for locked parameters
-
-```
-# Transform "gallery" = { w: 800, h: 600, fit: "cover", q: 85 } with locked: ["w", "h"]
-
-# URL: /myapp/img_01JK/t_gallery,q_90.webp
-# Result: w=800, h=600, fit=cover, q=90  (q was overridden, w and h were locked)
-```
+Upload a watermark image, then reference its `{id}` as `watermarkId` in a transform (or as `wm_{id}` in a delivery URL).

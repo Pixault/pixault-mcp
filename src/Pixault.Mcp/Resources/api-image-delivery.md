@@ -13,7 +13,7 @@ https://img.pixault.io/{project}/{imageId}/{transformations}.{format}
 | `project` | Your project identifier (e.g., `myapp`) |
 | `imageId` | The image ID returned from upload (e.g., `img_01JKXYZ`) |
 | `transformations` | Comma-separated key-value pairs (e.g., `w_800,h_600,fit_cover`) |
-| `format` | Output format as file extension: `jpg`, `png`, `webp`, `avif` |
+| `format` | Output format as file extension: `jpg`, `png`, `webp`, `avif`, or `auto` |
 
 ## Transformation Parameters
 
@@ -92,7 +92,37 @@ https://img.pixault.io/myapp/img_01JK/t_gallery.webp
 https://img.pixault.io/myapp/img_01JK/t_gallery,w_400.webp
 ```
 
-See <a href="api-transforms.md">Named Transforms</a> for creating presets.
+See [Named Transforms](api-transforms.md) for creating presets.
+
+## Auto Format (`.auto`)
+
+The headline auto-format feature is the explicit `.auto` extension. Instead of pinning a format, build the URL with `.auto` and let Pixault negotiate the best-supported format per client:
+
+```
+https://img.pixault.io/myapp/img_01JK/w_800.auto
+```
+
+The server inspects the request's `Accept` header and resolves the most efficient format the client supports (AVIF, WebP, etc.), then sets `Vary: Accept` on the response so caches key correctly per client. Explicit format extensions (`.webp`, `.avif`, `.jpg`, `.png`) always take precedence and pin the output.
+
+## Video Delivery
+
+Video assets are served from their own path with HTTP range request support, so players can seek and stream efficiently:
+
+```
+https://img.pixault.io/myapp/{videoId}/video.mp4
+https://img.pixault.io/myapp/{videoId}/video.webm
+https://img.pixault.io/myapp/{videoId}/video.mov
+```
+
+## Embeds & Responsive Helpers
+
+For a ready-to-paste responsive HTML embed, request the `embed` endpoint:
+
+```
+https://img.pixault.io/myapp/img_01JK/embed
+```
+
+The .NET SDK's URL builder also produces responsive markup directly via `.ToImgTag(...)` (an `<img>` with `srcset`) and `.ToPictureTag(...)` (a `<picture>` element). See the SDK reference for details.
 
 ## Signed URLs
 
@@ -107,7 +137,7 @@ https://img.pixault.io/myapp/img_01JK/original.jpg?sig=abc123def&exp=1709312400
 | `sig` | HMAC-SHA256 signature |
 | `exp` | Unix timestamp expiration |
 
-The signature is computed over `{project}/{imageId}/original.{format}?exp={timestamp}` using your account's HMAC secret.
+The signature is computed over the request path `/{project}/{imageId}/original.{format}` using your account's HMAC secret. The `sig` and `exp` query parameters are then appended and validated server-side; `exp` is a separate query parameter, not part of the signed path string.
 
 ## Response Headers
 
@@ -115,23 +145,11 @@ The signature is computed over `{project}/{imageId}/original.{format}?exp={times
 |--------|-------|-------------|
 | `Cache-Control` | `public, max-age=2592000, immutable` | 30-day CDN caching |
 | `Content-Type` | `image/webp`, `image/jpeg`, etc. | Output format MIME type |
-| `X-Pixault-Cache` | `HIT` or `MISS` | Whether the variant was cached |
 | `ETag` | `"sha256hash"` | Content hash for conditional requests |
-
-## Format Negotiation
-
-If the `Accept` header includes `image/webp` or `image/avif`, Pixault will automatically select the most efficient format when the URL extension is omitted. Explicit format extensions always take precedence.
 
 ## Rate Limits
 
-Delivery endpoints use per-project sliding window rate limiting:
-
-| Limit | Value |
-|-------|-------|
-| Requests per minute | 1,000 per project |
-| Queue depth | 50 |
-
-Exceeding the limit returns `429 Too Many Requests` with a `Retry-After` header.
+Delivery endpoints are rate limited per project using a sliding window. Requests that exceed the limit return `429 Too Many Requests` with a `Retry-After` header indicating when to retry.
 
 ## Error Responses
 

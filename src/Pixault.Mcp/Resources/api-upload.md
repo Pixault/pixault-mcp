@@ -1,212 +1,117 @@
 # Upload API
 
-Upload images to Pixault via multipart form POST. All upload endpoints require API key authentication.
+Upload images, video, and EPS/PostScript assets to Pixault via a single multipart form POST. All API requests require API key authentication.
 
 ## Authentication
 
-Include your credentials in every request:
+Every request to the API authenticates with a single header:
 
 ```
-X-Client-Id: px_cl_your_client_id
-X-Client-Secret: pk_your_secret_key
+X-Api-Key: your-api-key
 ```
 
-Legacy single-key authentication is also supported:
+This is the only authentication scheme. There is no client-id/client-secret pair.
 
-```
-X-Api-Key: pk_your_api_key
-```
+## Upload an Asset
 
-## Upload an Image
+**`POST /api/{project}/upload`**
 
-**`POST /api/{project}/images`**
+Send `multipart/form-data`. The only required part is `file`. All other fields are optional form fields. The same endpoint handles images, video, and EPS — the asset type is detected from the file's content type.
 
-Upload a single image with optional metadata.
-
-### Request
+### Form fields
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `file` | File | Yes | Image file (JPEG, PNG, WebP, AVIF, GIF, SVG) |
-| `alt` | string | No | Alt text description |
-| `tags` | string[] | No | Searchable tags |
-| `title` | string | No | Image title |
-| `description` | string | No | Image description |
-| `customId` | string | No | Your own identifier for the image |
+| `file` | File | Yes | The asset to upload |
+| `name` | string | No | Display name |
+| `description` | string | No | Description |
+| `caption` | string | No | Caption |
+| `category` | string | No | Category |
+| `keywords` | string | No | Comma-separated keywords |
+| `author` | string | No | Author |
+| `folder` | string | No | Folder path to file the asset under |
+| `stripExif` | bool | No | Strip EXIF metadata from the stored original |
 
 ### Example
 
 ```bash
-curl -X POST https://img.pixault.io/api/myapp/images \
-  -H "X-Client-Id: px_cl_abc123" \
-  -H "X-Client-Secret: pk_secret456" \
+curl -X POST https://img.pixault.io/api/myapp/upload \
+  -H "X-Api-Key: your-api-key" \
   -F "file=@photo.jpg" \
-  -F "alt=Team photo from company retreat" \
-  -F "tags=team,retreat,2025"
+  -F "name=Team photo from company retreat" \
+  -F "keywords=team,retreat,2025" \
+  -F "folder=events/2025" \
+  -F "stripExif=true"
 ```
 
-### Response `201 Created`
+### Response `200 OK`
 
 ```json
 {
-  "id": "img_01JKXYZ123",
-  "project": "myapp",
-  "filename": "photo.jpg",
-  "contentType": "image/jpeg",
-  "sizeBytes": 2456789,
+  "imageId": "img_01JKXYZ123",
+  "url": "/myapp/img_01JKXYZ123",
   "width": 4000,
   "height": 3000,
-  "alt": "Team photo from company retreat",
-  "tags": ["team", "retreat", "2025"],
-  "createdAt": "2025-03-15T10:30:00Z",
-  "url": "https://img.pixault.io/myapp/img_01JKXYZ123/original.jpg"
+  "size": 2456789,
+  "isVideo": false,
+  "isEps": false,
+  "duration": null,
+  "thumbnailId": null,
+  "processingJobId": null
 }
 ```
 
-## List Images
+`imageId` is prefixed by asset type: `img_` for images, `vid_` for video, `eps_` for EPS. For video, `isVideo` is `true`, `duration` is populated, and `thumbnailId` references the auto-generated poster frame. For EPS, `isEps` is `true` and `processingJobId` is set while the asset is processed asynchronously (see below).
+
+## Supported Formats & Size Limits
+
+| Type | Formats | MIME types | Max size |
+|------|---------|------------|----------|
+| Image | JPEG, PNG, WebP, GIF, AVIF, SVG | `image/jpeg`, `image/png`, `image/webp`, `image/gif`, `image/avif`, `image/svg+xml` | 20 MB |
+| Video | MP4, WebM, MOV | `video/mp4`, `video/webm`, `video/quicktime` | 100 MB |
+| EPS/PostScript | EPS, PostScript | `application/postscript`, `application/eps`, `image/x-eps`, `image/eps` | 50 MB |
+
+Video uploads use the same `POST /api/{project}/upload` endpoint — there is no separate video route. Pixault auto-generates a thumbnail and serves video with HTTP range streaming.
+
+### EPS / PostScript (asynchronous)
+
+EPS uploads return immediately with a `processingJobId`. The asset is rasterized and analyzed in the background. Once processing completes you can:
+
+- `POST /api/{project}/{imageId}/split` — split a multi-design EPS into separate assets
+- `POST /api/{project}/{imageId}/extract-svg` — extract vector SVG output
+- `GET /api/{project}/{imageId}/derived` — list derived assets
+- `GET /api/{project}/{imageId}/processing-status` — poll processing state
+
+## Other Endpoints
+
+### List images
 
 **`GET /api/{project}/images`**
 
-Retrieve a paginated list of images.
-
-### Query Parameters
+Paginated list and search.
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `limit` | int | 20 | Results per page (1–100) |
+| `limit` | int | 50 | Results per page |
 | `cursor` | string | — | Pagination cursor from previous response |
-| `tag` | string | — | Filter by tag |
-| `search` | string | — | Search in alt text and tags |
+| `search` | string | — | Full-text search |
+| `category` | string | — | Filter by category |
+| `keyword` | string | — | Filter by keyword |
+| `author` | string | — | Filter by author |
+| `isVideo` | bool | — | Filter to (or away from) video assets |
+| `folder` | string | — | Filter by folder |
+| `includeDerived` | bool | — | Include derived assets (e.g. EPS outputs) |
 
-### Example
+Returns `{ "images": [...], "nextCursor": ..., "totalCount": ... }`.
 
-```bash
-curl https://img.pixault.io/api/myapp/images?limit=10&tag=nature \
-  -H "X-Client-Id: px_cl_abc123" \
-  -H "X-Client-Secret: pk_secret456"
-```
+### Get metadata
 
-### Response `200 OK`
+**`GET /api/{project}/{imageId}/metadata`** — returns the full metadata document for an asset.
 
-```json
-{
-  "images": [
-    {
-      "id": "img_01JKXYZ123",
-      "filename": "sunset.jpg",
-      "contentType": "image/jpeg",
-      "sizeBytes": 1234567,
-      "width": 3000,
-      "height": 2000,
-      "alt": "Golden sunset over the ocean",
-      "tags": ["nature", "sunset"],
-      "createdAt": "2025-03-15T10:30:00Z"
-    }
-  ],
-  "cursor": "eyJpZCI6Imlt...",
-  "hasMore": true
-}
-```
+### Update metadata
 
-## Get Image Metadata
+**`PATCH /api/{project}/{imageId}/metadata`** — update metadata in place; send any subset of the editable fields (`name`, `description`, `caption`, `category`, `folder`, `keywords`, `author`, `copyrightHolder`, `copyrightYear`, `license`, `dateCreated`, `datePublished`, location fields, `tags`, …). Returns the updated metadata.
 
-**`GET /api/{project}/images/{imageId}`**
+### Delete an asset
 
-Returns the full metadata for a single image.
-
-### Response `200 OK`
-
-```json
-{
-  "id": "img_01JKXYZ123",
-  "project": "myapp",
-  "filename": "photo.jpg",
-  "contentType": "image/jpeg",
-  "sizeBytes": 2456789,
-  "width": 4000,
-  "height": 3000,
-  "alt": "Team photo from company retreat",
-  "tags": ["team", "retreat"],
-  "title": "Company Retreat 2025",
-  "description": "Annual team photo at mountain lodge",
-  "createdAt": "2025-03-15T10:30:00Z",
-  "updatedAt": "2025-03-15T11:00:00Z"
-}
-```
-
-## Update Image Metadata
-
-**`PATCH /api/{project}/images/{imageId}`**
-
-Update metadata without re-uploading the image.
-
-### Request Body (JSON)
-
-```json
-{
-  "alt": "Updated alt text",
-  "tags": ["updated", "tags"],
-  "title": "New Title"
-}
-```
-
-### Response `200 OK`
-
-Returns the updated image metadata.
-
-## Delete an Image
-
-**`DELETE /api/{project}/images/{imageId}`**
-
-Permanently delete an image and all its cached variants.
-
-### Response `204 No Content`
-
-No body returned.
-
-## Supported Formats
-
-| Format | MIME Type | Upload | Delivery |
-|--------|-----------|--------|----------|
-| JPEG | `image/jpeg` | Yes | Yes |
-| PNG | `image/png` | Yes | Yes |
-| WebP | `image/webp` | Yes | Yes |
-| AVIF | `image/avif` | Yes | Yes |
-| GIF | `image/gif` | Yes | Yes |
-| SVG | `image/svg+xml` | Yes | Yes (sanitized) |
-
-### SVG Handling
-
-SVGs are sanitized on upload to remove potentially dangerous elements (scripts, external references). SVGs can be served as-is or rasterized to bitmap format via transform parameters.
-
-## Video Upload
-
-**`POST /api/{project}/videos`**
-
-Upload video files. Pixault auto-generates thumbnail frames.
-
-| Format | Supported |
-|--------|-----------|
-| MP4 | Yes |
-| WebM | Yes |
-| MOV | Yes |
-
-Videos support range-request streaming for playback.
-
-## Rate Limits
-
-Upload endpoints use per-API-key token bucket rate limiting:
-
-| Limit | Value |
-|-------|-------|
-| Requests per minute | 100 per API key |
-| Queue depth | 10 |
-
-## Storage Quotas
-
-Uploads are subject to your plan's storage limits. If you exceed your storage quota:
-
-- **Paid plans**: Overages accrue at your plan's overage rate
-- **Trial/Free**: Uploads are rejected with `413 Payload Too Large`
-
-Check your current usage in the <a href="billing-and-plans.md">billing dashboard</a>.
+**`DELETE /api/{project}/{imageId}`** — permanently deletes the asset and all its cached variants.

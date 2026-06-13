@@ -5,48 +5,63 @@ Get your first image uploaded and served through Pixault in under 5 minutes.
 ## Prerequisites
 
 - A Pixault account at [pixault.io](https://pixault.io)
-- An API key (client ID + client secret) from the dashboard
+- An API key from the dashboard
 
-## Step 1: Get Your API Credentials
+## Step 1: Get Your API Key
 
 1. Sign in at [pixault.io](https://pixault.io)
 2. Go to **Billing** → **API Keys**
 3. Click **Create API Key**
-4. Save the **Client ID** (`px_cl_...`) and **Client Secret** (`pk_...`) — the secret is only shown once
+4. Copy the key and store it securely — it is only shown once
+
+Every API request authenticates with a single header:
+
+```
+X-Api-Key: <your-api-key>
+```
+
+There is no client ID / client secret pair — just the one key.
 
 ## Step 2: Upload an Image
 
+Upload is a `multipart/form-data` POST to `/api/{project}/upload`. The only required part is `file`. Optional form fields include `name`, `description`, `caption`, `category`, `keywords` (comma-separated), `author`, `folder`, and `stripExif`.
+
 ```bash
-curl -X POST https://img.pixault.io/api/myapp/images \
-  -H "X-Client-Id: px_cl_your_client_id" \
-  -H "X-Client-Secret: pk_your_secret_key" \
+curl -X POST https://img.pixault.io/api/myapp/upload \
+  -H "X-Api-Key: your-api-key" \
   -F "file=@photo.jpg" \
-  -F "alt=A beautiful sunset" \
-  -F "tags=nature,sunset"
+  -F "name=A beautiful sunset" \
+  -F "keywords=nature,sunset"
 ```
 
-Response:
+A successful upload returns **200 OK**:
 
 ```json
 {
-  "id": "img_01JKXYZ123",
-  "project": "myapp",
-  "filename": "photo.jpg",
-  "contentType": "image/jpeg",
-  "sizeBytes": 2456789,
+  "imageId": "img_01JKXYZ123",
+  "url": "/myapp/img_01JKXYZ123",
   "width": 4000,
   "height": 3000,
-  "url": "https://img.pixault.io/myapp/img_01JKXYZ123/original.jpg"
+  "size": 2456789,
+  "isVideo": false,
+  "isEps": false,
+  "duration": null,
+  "thumbnailId": null,
+  "processingJobId": null
 }
 ```
 
+The `imageId` prefix tells you the asset type: `img_` for images, `vid_` for video, `eps_` for EPS/PostScript. Video uploads use this same endpoint — the content type is detected automatically.
+
+Limits: images up to 20 MB, video up to 100 MB, EPS up to 50 MB.
+
 ## Step 3: Serve a Transformed Image
 
-Use URL parameters to transform on-the-fly:
+Delivery URLs are public (no `/api` prefix) and served through the CDN. The shape is `/{project}/{imageId}/{params}.{format}`, where `params` is a comma-separated list (`w_{n}`, `h_{n}`, `fit_{cover|contain|fill|pad}`, `q_{n}`, `blur_{n}`, and more).
 
 ```
-# Thumbnail (200x200, cover crop, WebP)
-https://img.pixault.io/myapp/img_01JKXYZ123/w_200,h_200,fit_cover.webp
+# Thumbnail (400x400, cover crop, WebP)
+https://img.pixault.io/myapp/img_01JKXYZ123/w_400,h_400,fit_cover.webp
 
 # Gallery size with quality
 https://img.pixault.io/myapp/img_01JKXYZ123/w_800,q_85.webp
@@ -55,103 +70,62 @@ https://img.pixault.io/myapp/img_01JKXYZ123/w_800,q_85.webp
 https://img.pixault.io/myapp/img_01JKXYZ123/w_40,q_20,blur_10.webp
 ```
 
-## Step 4: Use an SDK (Optional)
+Use the `.auto` extension to let the server pick the best format (AVIF, WebP, etc.) from the request's `Accept` header:
 
-### JavaScript
-
-```javascript
-import { Pixault } from '@pixault/sdk';
-
-const px = new Pixault({
-  clientId: 'px_cl_your_client_id',
-  clientSecret: 'pk_your_secret_key',
-  project: 'myapp',
-});
-
-// Upload
-const image = await px.upload(file, {
-  alt: 'A beautiful sunset',
-  tags: ['nature', 'sunset'],
-});
-
-// Build transform URL
-const url = px.url(image.id)
-  .width(800)
-  .height(600)
-  .fit('cover')
-  .format('webp')
-  .build();
+```
+https://img.pixault.io/myapp/img_01JKXYZ123/w_800.auto
 ```
 
-### .NET
+The untransformed original lives at `/{project}/{imageId}/original.{format}`. Transformed assets are returned with `Cache-Control: public, max-age=2592000, immutable` (30 days) plus an ETag.
+
+## Step 4: Use the .NET SDK (Optional)
+
+Install the published package:
+
+```bash
+dotnet add package Pixault.Client
+```
+
+Register it in DI, supplying your API key:
 
 ```csharp
-// Register in DI
 builder.Services.AddPixault(options =>
 {
     options.BaseUrl = "https://img.pixault.io";
+    options.CdnUrl = "https://img.pixault.io";
     options.DefaultProject = "myapp";
+    options.ApiKey = "your-api-key";
 });
+```
 
-// Upload
-var result = await uploadClient.UploadAsync(stream, "photo.jpg",
-    alt: "A beautiful sunset", tags: ["nature", "sunset"]);
+Upload a file with `PixaultUploadClient`:
 
-// Build transform URL
-var url = imageService.Url(result.Id)
-    .Width(800).Height(600)
+```csharp
+await using var stream = File.OpenRead("photo.jpg");
+var result = await uploadClient.UploadAsync(
+    "myapp", "photo.jpg", stream, "image/jpeg");
+
+string imageId = result.ImageId;
+```
+
+Build a transformed delivery URL with `PixaultImageService`:
+
+```csharp
+var url = images.For("myapp", imageId)
+    .Width(400)
+    .Height(400)
     .Fit(FitMode.Cover)
-    .Format(OutputFormat.WebP)
+    .Format("webp")
     .Build();
 ```
 
-### PHP
+`Format` takes a string (for example `"webp"`). Use `.For(...)` to start a URL — there is no `.Url()` method.
 
-```php
-$pixault = new Pixault([
-    'client_id' => 'px_cl_your_client_id',
-    'client_secret' => 'pk_your_secret_key',
-    'base_url' => 'https://img.pixault.io',
-    'project' => 'myapp',
-]);
-
-// Upload
-$image = $pixault->upload('/path/to/photo.jpg', [
-    'alt' => 'A beautiful sunset',
-    'tags' => ['nature', 'sunset'],
-]);
-
-// Transform URL
-$url = $pixault->url($image['id'])
-    ->width(800)->height(600)
-    ->fit('cover')->format('webp')
-    ->build();
-```
-
-### Python
-
-```python
-from pixault import Pixault
-
-px = Pixault(
-    client_id="px_cl_your_client_id",
-    client_secret="pk_your_secret_key",
-    project="myapp",
-)
-
-# Upload
-image = px.upload("photo.jpg", alt="A beautiful sunset", tags=["nature", "sunset"])
-
-# Transform URL
-url = (px.url(image["id"])
-    .width(800).height(600)
-    .fit("cover").format("webp")
-    .build())
-```
+SDKs for JavaScript, Python, and PHP are also available — see their dedicated pages.
 
 ## What's Next?
 
-- <a href="api-image-delivery.md">Image Delivery API</a> — Full URL scheme and transform parameter reference
-- <a href="api-upload.md">Upload API</a> — Multi-file upload, metadata, tagging
-- <a href="api-transforms.md">Named Transforms</a> — Create reusable transform presets
-- <a href="billing-and-plans.md">Billing & Plans</a> — Plan features and usage limits
+- [Image Delivery API](api-image-delivery.md) — Full URL scheme and transform parameter reference
+- [Upload API](api-upload.md) — Upload fields, metadata, and folders
+- [Named Transforms](api-transforms.md) — Create reusable transform presets
+- [.NET SDK](sdk-dotnet.md) — Full SDK reference
