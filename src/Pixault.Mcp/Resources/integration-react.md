@@ -14,8 +14,7 @@ import { Pixault, PixaultUrl } from '@pixault/sdk';
 
 // Server-side only (API calls)
 export const px = new Pixault({
-  clientId: process.env.PIXAULT_CLIENT_ID,
-  clientSecret: process.env.PIXAULT_CLIENT_SECRET,
+  apiKey: process.env.PIXAULT_API_KEY,
   project: 'myapp',
 });
 

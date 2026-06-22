@@ -18,8 +18,7 @@ builder.Services.AddPixault(options =>
 {
     options.BaseUrl = "https://img.pixault.io";
     options.DefaultProject = "myapp";
-    options.ClientId = "px_cl_your_client_id";
-    options.ClientSecret = "pk_your_secret_key";
+    options.ApiKey = "pk_your_secret_key";
 });
 ```
 

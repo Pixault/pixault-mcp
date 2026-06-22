@@ -16,14 +16,13 @@ yarn add @pixault/sdk
 import { Pixault } from '@pixault/sdk';
 
 const px = new Pixault({
-  clientId: 'px_cl_your_client_id',
-  clientSecret: 'pk_your_secret_key',
+  apiKey: 'pk_your_secret_key',
   baseUrl: 'https://img.pixault.io',  // optional, this is the default
   project: 'myapp',
 });
 ```
 
-> **Browser usage:** Never expose your client secret in client-side code. Use the URL builder (which doesn't require secrets) in the browser, and make API calls from your server.
+> **Browser usage:** Never expose your API key in client-side code. Use the URL builder (which doesn't require secrets) in the browser, and make API calls from your server.
 
 ## URL Builder
 
@@ -162,8 +161,7 @@ The SDK is written in TypeScript and exports full type definitions:
 import type { PixaultConfig, ImageMetadata, UploadOptions } from '@pixault/sdk';
 
 const config: PixaultConfig = {
-  clientId: 'px_cl_abc123',
-  clientSecret: 'pk_secret456',
+  apiKey: 'pk_secret456',
   project: 'myapp',
 };
 ```

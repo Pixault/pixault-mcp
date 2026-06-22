@@ -218,8 +218,7 @@ function onFileSelect(e) {
 import { Pixault } from '@pixault/sdk';
 
 const px = new Pixault({
-  clientId: process.env.PIXAULT_CLIENT_ID,
-  clientSecret: process.env.PIXAULT_CLIENT_SECRET,
+  apiKey: process.env.PIXAULT_API_KEY,
   project: 'myapp',
 });
 
