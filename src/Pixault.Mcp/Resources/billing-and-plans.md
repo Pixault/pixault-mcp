@@ -78,16 +78,10 @@ Visit [pixault.io](https://pixault.io) → **Billing** to:
 
 ### API Keys
 
-Each API key consists of:
-
-- **Client ID** (`px_cl_...`) — Public identifier, safe to store in configs
-- **Client Secret** (`pk_...`) — Secret key, shown only once at creation time
-
-Use both in API requests:
+Each API key is a single secret (`pk_...`) shown only once at creation time. Pass it as the `X-Api-Key` header on every request:
 
 ```
-X-Client-Id: px_cl_your_client_id
-X-Client-Secret: pk_your_secret_key
+X-Api-Key: pk_your_secret_key
 ```
 
 Keys can be scoped to specific projects for security.

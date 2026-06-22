@@ -16,10 +16,9 @@ Requires PHP 8.1+ and the `curl` extension.
 use Pixault\Pixault;
 
 $pixault = new Pixault([
-    'client_id'     => 'px_cl_your_client_id',
-    'client_secret' => 'pk_your_secret_key',
-    'base_url'      => 'https://img.pixault.io',  // optional default
-    'project'       => 'myapp',
+    'api_key'  => 'pk_your_secret_key',
+    'base_url' => 'https://img.pixault.io',  // optional default
+    'project'  => 'myapp',
 ]);
 ```
 
@@ -138,9 +137,8 @@ $transforms = $pixault->listTransforms();
 ```php
 // config/services.php
 'pixault' => [
-    'client_id'     => env('PIXAULT_CLIENT_ID'),
-    'client_secret' => env('PIXAULT_CLIENT_SECRET'),
-    'project'       => env('PIXAULT_PROJECT', 'default'),
+    'api_key' => env('PIXAULT_API_KEY'),
+    'project' => env('PIXAULT_PROJECT', 'default'),
 ],
 
 // AppServiceProvider

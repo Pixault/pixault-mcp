@@ -19,7 +19,7 @@ WordPress's `wp_get_attachment_url` filter rewrites URLs at render time. Origina
 
 1. Install the Pixault plugin from the WordPress plugin directory
 2. Go to **Settings** → **Pixault**
-3. Enter your **Client ID** and **Client Secret**
+3. Enter your **API Key** (`pk_…`)
 4. Set your **Project** name
 5. Select **CDN Mode**
 6. Save
@@ -27,8 +27,7 @@ WordPress's `wp_get_attachment_url` filter rewrites URLs at render time. Origina
 ### Configuration
 
 ```
-Pixault Client ID: px_cl_your_client_id
-Pixault Client Secret: pk_your_secret_key
+Pixault API Key: pk_your_secret_key
 Project: yoursite
 Default Quality: 85
 Default Format: webp

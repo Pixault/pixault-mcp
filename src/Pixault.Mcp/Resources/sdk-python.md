@@ -16,8 +16,7 @@ Requires Python 3.9+.
 from pixault import Pixault
 
 px = Pixault(
-    client_id="px_cl_your_client_id",
-    client_secret="pk_your_secret_key",
+    api_key="pk_your_secret_key",
     base_url="https://img.pixault.io",  # optional default
     project="myapp",
 )
@@ -158,8 +157,7 @@ px.delete_transform("thumbnail")
 
 ```python
 # settings.py
-PIXAULT_CLIENT_ID = os.environ.get("PIXAULT_CLIENT_ID")
-PIXAULT_CLIENT_SECRET = os.environ.get("PIXAULT_CLIENT_SECRET")
+PIXAULT_API_KEY = os.environ.get("PIXAULT_API_KEY")
 PIXAULT_PROJECT = os.environ.get("PIXAULT_PROJECT", "default")
 
 # views.py
@@ -168,8 +166,7 @@ from django.conf import settings
 
 def get_pixault():
     return Pixault(
-        client_id=settings.PIXAULT_CLIENT_ID,
-        client_secret=settings.PIXAULT_CLIENT_SECRET,
+        api_key=settings.PIXAULT_API_KEY,
         project=settings.PIXAULT_PROJECT,
     )
 
@@ -191,8 +188,7 @@ from pixault import Pixault
 
 app = FastAPI()
 px = Pixault(
-    client_id="px_cl_abc123",
-    client_secret="pk_secret456",
+    api_key="pk_your_secret_key",
     project="myapp",
 )
 
@@ -209,8 +205,7 @@ async def upload(file: UploadFile):
 from pixault import AsyncPixault
 
 px = AsyncPixault(
-    client_id="px_cl_abc123",
-    client_secret="pk_secret456",
+    api_key="pk_your_secret_key",
     project="myapp",
 )
 
