@@ -80,6 +80,88 @@ public sealed class ImageTools
     }
 
     [McpServerTool, Description(
+        "Bulk-delete images in a project. Select targets by explicit image IDs, by original filenames, or by a " +
+        "filter (folder / category / text search / media type). SAFETY: defaults to a DRY RUN that only reports " +
+        "what would be deleted — pass confirm=true to actually delete. Deletion is permanent. Requires delete permission.")]
+    public static async Task<string> DeleteImages(
+        PixaultAdminClient client,
+        AgentScope scope,
+        [Description("Set true to actually delete; false (default) previews what would be deleted. Always preview first.")] bool confirm = false,
+        [Description("Explicit image IDs to delete, comma-separated")] string? imageIds = null,
+        [Description("Original filenames to delete, comma-separated (resolved to images in the project)")] string? fileNames = null,
+        [Description("Delete every image in this folder")] string? folder = null,
+        [Description("Delete images matching this free-text search (name/filename/id)")] string? search = null,
+        [Description("Delete images in this category (exact, case-insensitive)")] string? category = null,
+        [Description("Limit to videos (true) or images (false)")] bool? isVideo = null,
+        [Description("Safety cap: refuse if more than this many images match (default 500)")] int max = 500,
+        [Description("Project identifier (uses default project if not specified)")] string? project = null)
+    {
+        if (scope.CheckDelete() is { } denied) return denied;
+
+        var targets = new Dictionary<string, string>(StringComparer.Ordinal); // imageId -> filename
+
+        if (!string.IsNullOrWhiteSpace(imageIds))
+            foreach (var id in imageIds.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                targets[id] = "";
+
+        var wantFiles = string.IsNullOrWhiteSpace(fileNames)
+            ? null
+            : fileNames.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                       .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var useScan = wantFiles is not null || !string.IsNullOrWhiteSpace(folder)
+                   || !string.IsNullOrWhiteSpace(search) || !string.IsNullOrWhiteSpace(category) || isVideo.HasValue;
+        var truncated = false;
+        if (useScan)
+        {
+            string? cursor = null;
+            var pages = 0;
+            do
+            {
+                var page = await client.ListImagesAsync(50, cursor, project: project,
+                    search: search, category: category, folder: folder, isVideo: isVideo);
+                foreach (var i in page.Images)
+                {
+                    if (wantFiles is not null && !wantFiles.Contains(i.OriginalFileName)) continue;
+                    targets[i.ImageId] = i.OriginalFileName;
+                }
+                cursor = page.NextCursor;
+            } while (cursor is not null && ++pages < 60);
+            truncated = cursor is not null; // hit the ~3000-image scan cap with more remaining
+        }
+
+        if (targets.Count == 0)
+            return "No matching images to delete.";
+        if (targets.Count > max)
+            return $"Refusing to delete {targets.Count} images — that exceeds the safety cap of {max}. " +
+                   $"Narrow the selection, or raise 'max' if this is intended.";
+
+        var proj = project ?? "default";
+        if (!confirm)
+        {
+            var preview = targets.Take(50).Select(t => $"- {t.Key}{(t.Value.Length > 0 ? $" ({t.Value})" : "")}");
+            return $"DRY RUN — would delete {targets.Count} image(s) from project '{proj}':\n" +
+                   string.Join("\n", preview) +
+                   (targets.Count > 50 ? $"\n… and {targets.Count - 50} more" : "") +
+                   (truncated ? "\n(scan hit ~3000 images; more may match)" : "") +
+                   "\n\nRe-run with confirm=true to permanently delete these.";
+        }
+
+        var ok = 0;
+        var errors = new List<string>();
+        foreach (var (id, _) in targets)
+        {
+            try { await client.DeleteImageAsync(id, project); ok++; }
+            catch (Exception ex) { errors.Add($"{id}: {ex.Message}"); }
+        }
+
+        var result = $"Deleted {ok}/{targets.Count} image(s) from project '{proj}'.";
+        if (errors.Count > 0)
+            result += $"\nErrors ({errors.Count}):\n" + string.Join("\n", errors.Take(10));
+        return result;
+    }
+
+    [McpServerTool, Description(
         "Generate a Pixault CDN URL for an image with transformations. " +
         "Supports width, height, fit mode, quality, blur, watermark, format, and named transforms.")]
     public static string BuildImageUrl(
