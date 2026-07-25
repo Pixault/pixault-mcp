@@ -5,6 +5,7 @@
 ## Features
 
 - **Image management** — list, search, upload, and delete images
+- **Filename resolution** — find an image by its exact original filename, or resolve a batch of filenames to their CDN URLs in one call
 - **Metadata** — read and edit Schema.org fields, geo-location, folders, custom tags; strip EXIF
 - **Folder operations** — create, list, and delete folders; filter images by folder
 - **Transformations** — apply and manage named transforms; build CDN URLs, responsive `<img>`/`<picture>` embeds, and fetch Schema.org JSON-LD

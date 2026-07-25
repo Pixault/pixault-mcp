@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using Microsoft.Extensions.Options;
 using ModelContextProtocol.Server;
 using Pixault.Client;
 
@@ -140,6 +141,94 @@ public sealed class ImageTools
         return style.Equals("img", StringComparison.OrdinalIgnoreCase)
             ? builder.ToImgTag(alt, widthArray, sizes, loading, cssClass)
             : builder.ToPictureTag(alt, widthArray, sizes, loading, cssClass);
+    }
+
+    [McpServerTool, Description(
+        "Find an image by its EXACT original filename within a project and return its ID plus ready-to-use CDN URLs. " +
+        "Use this to turn a known filename (e.g. a per-shop QR code) into a link. For fuzzy/partial matching, use " +
+        "ListImages with 'search' instead.")]
+    public static async Task<string> FindImageByFilename(
+        PixaultAdminClient client,
+        IOptions<PixaultOptions> options,
+        [Description("The exact original filename to find, including extension (e.g. 'final-cut-boca-llc-1426.svg')")] string fileName,
+        [Description("Project identifier (uses default project if not specified)")] string? project = null)
+    {
+        var proj = project ?? options.Value.DefaultProject ?? "default";
+        var baseUrl = (options.Value.CdnUrl ?? options.Value.BaseUrl).TrimEnd('/');
+
+        // 'search' narrows server-side (filename/name/id substrings); then keep the exact filename matches.
+        var response = await client.ListImagesAsync(50, null, project: project, search: fileName);
+        var matches = response.Images
+            .Where(i => string.Equals(i.OriginalFileName, fileName, StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(i => i.UploadedAt)
+            .ToList();
+
+        if (matches.Count == 0)
+            return $"No image with the exact filename '{fileName}' in project '{proj}'. " +
+                   $"Try ListImages with search=\"{fileName}\" for partial matches.";
+
+        var img = matches[0];
+        var ext = Path.GetExtension(fileName).TrimStart('.').ToLowerInvariant();
+        var lines = new List<string>
+        {
+            $"Found '{fileName}' in project '{proj}':",
+            $"- Image ID:      {img.ImageId}",
+            $"- Dimensions:    {img.Width}x{img.Height} ({img.FormattedSize})",
+            $"- Filename URL:  {baseUrl}/{proj}/{fileName}",
+            $"- Canonical URL: {baseUrl}/{proj}/{img.ImageId}/original.{ext}",
+        };
+        if (matches.Count > 1)
+            lines.Add($"\nNote: {matches.Count} images share this filename; returned the most recent. " +
+                      $"Others: {string.Join(", ", matches.Skip(1).Select(m => m.ImageId))}");
+        return string.Join("\n", lines);
+    }
+
+    [McpServerTool, Description(
+        "Resolve many original filenames to their Pixault CDN URLs in one call. Returns each filename → its clean " +
+        "filename URL and flags any that don't exist in the project. Ideal for turning a batch of known filenames " +
+        "(e.g. per-shop QR codes) into links.")]
+    public static async Task<string> ResolveImageUrls(
+        PixaultAdminClient client,
+        IOptions<PixaultOptions> options,
+        [Description("Filenames to resolve, comma- or newline-separated, each with its extension")] string fileNames,
+        [Description("Project identifier (uses default project if not specified)")] string? project = null)
+    {
+        var proj = project ?? options.Value.DefaultProject ?? "default";
+        var baseUrl = (options.Value.CdnUrl ?? options.Value.BaseUrl).TrimEnd('/');
+
+        var requested = fileNames
+            .Split([',', '\n', '\r'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (requested.Count == 0)
+            return "No filenames provided.";
+
+        // Page the project once and build a filename set — cheaper than one search per filename for large batches.
+        var existing = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        string? cursor = null;
+        var pages = 0;
+        do
+        {
+            var page = await client.ListImagesAsync(50, cursor, project: project);
+            foreach (var i in page.Images) existing.Add(i.OriginalFileName);
+            cursor = page.NextCursor;
+        } while (cursor is not null && ++pages < 40);   // cap ~2000 images scanned
+
+        var found = new List<string>();
+        var missing = new List<string>();
+        foreach (var fn in requested)
+        {
+            if (existing.Contains(fn)) found.Add($"- {fn} → {baseUrl}/{proj}/{fn}");
+            else missing.Add(fn);
+        }
+
+        var lines = new List<string> { $"Resolved {found.Count}/{requested.Count} filename(s) in project '{proj}':", "" };
+        lines.AddRange(found);
+        if (missing.Count > 0)
+            lines.Add($"\nNot found ({missing.Count}): {string.Join(", ", missing)}");
+        if (cursor is not null)
+            lines.Add("\nNote: scanned the first ~2000 images; a larger project may have unchecked filenames.");
+        return string.Join("\n", lines);
     }
 
     private static FitMode ParseFitMode(string fit) => fit.ToLowerInvariant() switch
