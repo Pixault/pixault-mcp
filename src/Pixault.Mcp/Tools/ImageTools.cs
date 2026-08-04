@@ -10,36 +10,54 @@ namespace Pixault.Mcp.Tools;
 public sealed class ImageTools
 {
     [McpServerTool, Description(
-        "Download a zip archive of one or more images' original files to a local path. Provide comma-separated " +
-        "image IDs; the archive is written to the given local path (default ./pixault-archive.zip) and its full " +
-        "path and size are returned. Ideal for 'download these N images as a zip' agent workflows.")]
+        "Download a zip archive of one or more images' original files to a local path UNDER the current working " +
+        "directory. Provide comma-separated image IDs; the archive is written to the given path (default " +
+        "./pixault-archive.zip) and its full path + size are returned. Requires write permission (PIXAULT_ALLOW_WRITE) " +
+        "since it exports original bytes and writes to disk.")]
     public static async Task<string> GenerateArchive(
         IHttpClientFactory httpFactory,
         IOptions<PixaultOptions> pixault,
+        AgentScope scope,
         [Description("Comma-separated image IDs to include in the archive")] string imageIds,
-        [Description("Local .zip file path to write (default: ./pixault-archive.zip)")] string? outputPath = null,
+        [Description("Relative .zip path under the working directory (default: ./pixault-archive.zip)")] string? outputPath = null,
         [Description("Project identifier (uses the default project if not specified)")] string? project = null)
     {
+        // Bulk-exports original bytes to disk — gate behind write permission.
+        if (scope.CheckWrite() is { } denied) return denied;
+
         var ids = imageIds.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
         if (ids.Count == 0) return "No image IDs provided.";
 
+        // Validate the project is a plain slug before interpolating it into the request URL.
         var proj = project ?? pixault.Value.DefaultProject;
         if (string.IsNullOrEmpty(proj)) return "No project specified and no default project is configured.";
+        if (!IsSafeSlug(proj)) return $"Invalid project identifier '{proj}' (allowed: letters, digits, '-', '_').";
 
-        var path = string.IsNullOrWhiteSpace(outputPath) ? "pixault-archive.zip" : outputPath!;
+        // Confine the output to the working directory: block absolute paths, traversal, and non-.zip targets.
+        var requested = string.IsNullOrWhiteSpace(outputPath) ? "pixault-archive.zip" : outputPath!;
+        var cwd = Path.GetFullPath(Directory.GetCurrentDirectory());
+        var fullPath = Path.GetFullPath(Path.Combine(cwd, requested));
+        if (!fullPath.StartsWith(cwd + Path.DirectorySeparatorChar, StringComparison.Ordinal))
+            return "Refusing to write outside the working directory; provide a relative path under it.";
+        if (!fullPath.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
+            return "Output path must end in '.zip'.";
 
         var http = httpFactory.CreateClient("PixaultApi");
-        using var resp = await http.PostAsJsonAsync($"api/{proj}/archive",
-            new { imageIds = ids, fileName = Path.GetFileName(path) });
+        using var resp = await http.PostAsJsonAsync($"api/{Uri.EscapeDataString(proj)}/archive",
+            new { imageIds = ids, fileName = Path.GetFileName(fullPath) });
         if (!resp.IsSuccessStatusCode)
             return $"Archive failed ({(int)resp.StatusCode} {resp.ReasonPhrase}): {await resp.Content.ReadAsStringAsync()}";
 
-        await using (var fs = File.Create(path))
+        Directory.CreateDirectory(Path.GetDirectoryName(fullPath)!);
+        await using (var fs = File.Create(fullPath))
             await resp.Content.CopyToAsync(fs);
 
-        var size = new FileInfo(path).Length;
-        return $"Archived {ids.Count} image(s) to '{Path.GetFullPath(path)}' ({size:N0} bytes).";
+        var size = new FileInfo(fullPath).Length;
+        return $"Archived {ids.Count} image(s) to '{fullPath}' ({size:N0} bytes).";
     }
+
+    private static bool IsSafeSlug(string s) =>
+        s.Length is > 0 and <= 128 && s.All(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_');
 
     [McpServerTool, Description(
         "Upload an image or video to Pixault. Accepts file path and uploads it to the specified project. " +
