@@ -127,6 +127,103 @@ public sealed class MetadataTools
             : $"Failed to strip EXIF from '{imageId}'.";
     }
 
+    [McpServerTool, Description(
+        "Move an image into a folder (or to the project root). Metadata-only move — it re-files the image without " +
+        "moving stored bytes or changing its delivery URL. Pass an empty string to move to the root.")]
+    public static async Task<string> MoveImage(
+        PixaultAdminClient client,
+        AgentScope scope,
+        [Description("The image ID to move")] string imageId,
+        [Description("Destination folder path (e.g. 'products/hero'), or empty string for the root")] string folder)
+    {
+        if (scope.CheckWrite() is { } denied) return denied;
+
+        var result = await client.UpdateMetadataAsync(imageId, new MetadataUpdate { Folder = folder });
+        return result is not null
+            ? $"Moved '{imageId}' to {(string.IsNullOrEmpty(folder) ? "the root" : $"folder '{folder}'")}."
+            : $"Failed to move '{imageId}'.";
+    }
+
+    [McpServerTool, Description(
+        "Rename an image's display name (Schema.org name). NOTE: this changes the human-facing display name only — " +
+        "it does NOT change the image's addressable publicId or its delivery URL. To change the URL slug, re-upload " +
+        "the image with overwrite.")]
+    public static async Task<string> RenameImage(
+        PixaultAdminClient client,
+        AgentScope scope,
+        [Description("The image ID to rename")] string imageId,
+        [Description("The new display name")] string name)
+    {
+        if (scope.CheckWrite() is { } denied) return denied;
+
+        var result = await client.UpdateMetadataAsync(imageId, new MetadataUpdate { Name = name });
+        return result is not null
+            ? $"Renamed '{imageId}' display name to '{name}'."
+            : $"Failed to rename '{imageId}'.";
+    }
+
+    [McpServerTool, Description(
+        "Add keyword tags to an image (Schema.org keywords). Appends to existing tags by default; set replace=true " +
+        "to overwrite them entirely. Tags are searchable via list_images (keyword filter) and list_tags.")]
+    public static async Task<string> TagImage(
+        PixaultAdminClient client,
+        AgentScope scope,
+        [Description("The image ID to tag")] string imageId,
+        [Description("Comma-separated keyword tags (e.g. 'summer,beach,promo')")] string tags,
+        [Description("Replace all existing tags instead of appending")] bool replace = false)
+    {
+        if (scope.CheckWrite() is { } denied) return denied;
+
+        var incoming = tags.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+        if (incoming.Count == 0) return "No tags provided.";
+
+        List<string> final;
+        if (replace)
+        {
+            final = incoming;
+        }
+        else
+        {
+            var meta = await client.GetMetadataAsync(imageId);
+            if (meta is null) return $"Image '{imageId}' not found.";
+            final = (meta.Keywords ?? []).Concat(incoming)
+                .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        }
+
+        var result = await client.UpdateMetadataAsync(imageId, new MetadataUpdate { Keywords = final });
+        return result is not null
+            ? $"{(replace ? "Set" : "Added")} tags on '{imageId}'. Current tags: {string.Join(", ", final)}."
+            : $"Failed to tag '{imageId}'.";
+    }
+
+    [McpServerTool, Description(
+        "List all distinct keyword tags used across a project, with the number of images carrying each. Useful for " +
+        "discovering the existing tag vocabulary before filtering or organizing.")]
+    public static async Task<string> ListTags(
+        PixaultAdminClient client,
+        [Description("Project identifier (uses the default project if not specified)")] string? project = null)
+    {
+        var counts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        string? cursor = null;
+        var pages = 0;
+        do
+        {
+            var page = await client.ListImagesAsync(limit: 100, cursor: cursor, project: project);
+            foreach (var img in page.Images)
+                if (img.Keywords is { Count: > 0 })
+                    foreach (var k in img.Keywords)
+                        counts[k] = counts.GetValueOrDefault(k) + 1;
+            cursor = page.NextCursor;
+        } while (cursor is not null && ++pages < 100);
+
+        if (counts.Count == 0)
+            return $"No tags found in project '{project ?? "(default)"}'.";
+
+        var lines = counts.OrderByDescending(kv => kv.Value).ThenBy(kv => kv.Key, StringComparer.OrdinalIgnoreCase)
+            .Select(kv => $"  {kv.Key} ({kv.Value})");
+        return $"Tags in project '{project ?? "(default)"}':\n" + string.Join("\n", lines);
+    }
+
     private static DateTimeOffset? ParseDate(string? value) =>
         DateTimeOffset.TryParse(value, out var d) ? d : null;
 
