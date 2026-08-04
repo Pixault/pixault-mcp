@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Net.Http.Json;
 using Microsoft.Extensions.Options;
 using ModelContextProtocol.Server;
 using Pixault.Client;
@@ -8,6 +9,38 @@ namespace Pixault.Mcp.Tools;
 [McpServerToolType]
 public sealed class ImageTools
 {
+    [McpServerTool, Description(
+        "Download a zip archive of one or more images' original files to a local path. Provide comma-separated " +
+        "image IDs; the archive is written to the given local path (default ./pixault-archive.zip) and its full " +
+        "path and size are returned. Ideal for 'download these N images as a zip' agent workflows.")]
+    public static async Task<string> GenerateArchive(
+        IHttpClientFactory httpFactory,
+        IOptions<PixaultOptions> pixault,
+        [Description("Comma-separated image IDs to include in the archive")] string imageIds,
+        [Description("Local .zip file path to write (default: ./pixault-archive.zip)")] string? outputPath = null,
+        [Description("Project identifier (uses the default project if not specified)")] string? project = null)
+    {
+        var ids = imageIds.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+        if (ids.Count == 0) return "No image IDs provided.";
+
+        var proj = project ?? pixault.Value.DefaultProject;
+        if (string.IsNullOrEmpty(proj)) return "No project specified and no default project is configured.";
+
+        var path = string.IsNullOrWhiteSpace(outputPath) ? "pixault-archive.zip" : outputPath!;
+
+        var http = httpFactory.CreateClient("PixaultApi");
+        using var resp = await http.PostAsJsonAsync($"api/{proj}/archive",
+            new { imageIds = ids, fileName = Path.GetFileName(path) });
+        if (!resp.IsSuccessStatusCode)
+            return $"Archive failed ({(int)resp.StatusCode} {resp.ReasonPhrase}): {await resp.Content.ReadAsStringAsync()}";
+
+        await using (var fs = File.Create(path))
+            await resp.Content.CopyToAsync(fs);
+
+        var size = new FileInfo(path).Length;
+        return $"Archived {ids.Count} image(s) to '{Path.GetFullPath(path)}' ({size:N0} bytes).";
+    }
+
     [McpServerTool, Description(
         "Upload an image or video to Pixault. Accepts file path and uploads it to the specified project. " +
         "Returns the new image ID and CDN URL. Supported formats: JPEG, PNG, WebP, GIF, AVIF, SVG, MP4, WebM, MOV.")]
